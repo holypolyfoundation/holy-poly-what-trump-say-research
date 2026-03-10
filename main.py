@@ -360,10 +360,13 @@ def main() -> int:
             if not cfg.dry_run:
                 data["last_report_message"] = new_message
                 save_event_state(path, data)
+                print(f"[ok] sent and saved state for {slug}")
+            else:
+                print(f"[ok] would send for {slug} (dry-run; state not saved)")
             sent += 1
             time.sleep(0.4)
     if sent:
-        print(f"[ok] sent {sent} event report(s)")
+        print(f"[ok] total: {sent} event report(s)")
     else:
         print("[ok] no change in any report; not sent")
 
