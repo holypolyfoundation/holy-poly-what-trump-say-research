@@ -37,6 +37,7 @@ python3 --version
 - `systemd/holy-poly-what-trump-say-research.service` — systemd oneshot (used by timer)
 - `systemd/holy-poly-what-trump-say-research.timer` — systemd timer (every 10 minutes)
 - `install-systemd-timer.sh` — installs timer and service
+- `.github/workflows/deploy-on-push.yml` — GitHub Action: on push to default branch, runs `git pull` + install script on self-hosted runner (see “Run install on every push” below)
 - `.env` — environment config (secrets + params); copy from `.env.example`. Hidden file: use `ls -la` to see it.
 
 ## Configuration (environment variables)
@@ -126,6 +127,43 @@ The service runs `python3` from your **project directory**, so it always uses th
   ```bash
   ./install-systemd-timer.sh
   ```
+
+## Run install on every push (GitHub Actions, no custom code)
+
+Use **GitHub’s built-in Actions** with a **self-hosted runner** on your server so each push to the default branch runs `git pull` and `./install-systemd-timer.sh` there. No webhook server to run or maintain.
+
+1. **Add a repo secret**  
+   Repo → **Settings** → **Secrets and variables** → **Actions** → **New repository secret**  
+   Name: `DEPLOY_PATH`  
+   Value: absolute path to the repo on the server (e.g. `/root/apps/holy-poly-what-trump-say-research`).
+
+2. **Install a self-hosted runner on the server**  
+   - **On GitHub:** Open your repo → **Settings** → **Actions** → **Runners** → **New self-hosted runner**. Choose **Linux** and the architecture (e.g. **x64**). The page will show a one-time token and exact commands.  
+   - **On the server:** The runner **must not** be run as root. Use a normal user (or create one, e.g. `adduser --disabled-password runner`). Run the commands from the GitHub page in that user’s shell (no `sudo` for download/config):
+
+     ```bash
+     # As a normal user (not root): create folder, download, extract
+     mkdir -p ~/actions-runner && cd ~/actions-runner
+     # (run the curl and tar commands from the GitHub page)
+
+     # Configure — do NOT use sudo; token from GitHub page expires in 1 hour
+     ./config.sh --url https://github.com/YOUR_USER/YOUR_REPO --token YOUR_TOKEN_FROM_PAGE
+
+     # Then install the systemd service (sudo only for svc.sh)
+     sudo ./svc.sh install
+     sudo ./svc.sh start
+     ```
+
+   - If you created the runner directory as root, fix ownership and run config as the normal user:  
+     `sudo chown -R YOUR_USER:YOUR_USER /path/to/actions-runner`, then `su - YOUR_USER`, `cd /path/to/actions-runner`, run `./config.sh ...` (no sudo). Then as root run `sudo ./svc.sh install` and `sudo ./svc.sh start` from that directory.
+   - Replace `YOUR_USER/YOUR_REPO` and `YOUR_TOKEN_FROM_PAGE` with your repo and the token from the GitHub “New self-hosted runner” page. When connected you’ll see “Listening for Jobs”; the runner appears under **Settings** → **Actions** → **Runners** as “Idle”.
+
+3. **Workflow**  
+   The repo already has `.github/workflows/deploy-on-push.yml`: on push to `main` it runs on the self-hosted runner, `cd`’s into `DEPLOY_PATH`, runs `git pull --ff-only` and `./install-systemd-timer.sh`.  
+   If your default branch is not `main`, edit the workflow and change `branches: [main]` to your branch.
+
+After that, every push to the default branch will run the install script on the server automatically.  
+**Note:** The runner user must be able to run `sudo` (e.g. passwordless for the install script) so `install-systemd-timer.sh` can copy units and run `systemctl`.
 
 ## Message format
 Per-event report: event title (link) + list of keywords with count and optional transcript links. Lines whose counter changed since the last report are prefixed with 🟢.

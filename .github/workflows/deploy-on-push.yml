@@ -1,0 +1,18 @@
+# Run install-systemd-timer.sh on the server when something is pushed to the default branch.
+# Requires: self-hosted runner on the server, and repo secret DEPLOY_PATH = path to repo on server (e.g. /root/apps/holy-poly-what-trump-say-research).
+
+name: Deploy on push
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    steps:
+      - name: Pull and install timer
+        run: |
+          cd "${{ secrets.DEPLOY_PATH }}"
+          git pull --ff-only
+          ./install-systemd-timer.sh
