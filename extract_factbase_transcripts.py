@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Extract Donald Trump transcript text from Factbase transcript HTML files.
 
-Reads state/facts/*.html (or specified paths), finds blocks where an h2 contains
+Reads state/facts/<date>/*.html per date folder, finds blocks where an h2 contains
 "Donald Trump" and the transcript is in the following sibling div, then writes
-state/facts/<slug>.txt with the concatenated transcript text.
+state/facts/<date>/transcripts/<slug>.txt.
 
 Env vars:
   STATE_DIR   default ./state (relative to script dir)
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -73,8 +74,11 @@ def process_file(html_path: Path, out_path: Path) -> bool:
     return bool(transcript.strip())
 
 
+_DATE_DIR_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
 def run_extract(state_dir: str) -> None:
-    """Extract Donald Trump transcripts from all state/facts/*.html; write state/facts/*.txt."""
+    """Extract Donald Trump transcripts from state/facts/<date>/*.html into state/facts/<date>/transcripts/*.txt."""
     _run_extract_impl(Path(state_dir))
 
 
@@ -83,15 +87,21 @@ def _run_extract_impl(state_dir: Path) -> int:
     if not facts_dir.is_dir():
         print("[extract] state/facts not found; skipping.", file=sys.stderr)
         return 1
-    html_paths = sorted(facts_dir.glob("*.html"))
+    html_paths: list[Path] = []
+    for child in sorted(facts_dir.iterdir()):
+        if not child.is_dir() or not _DATE_DIR_PATTERN.match(child.name):
+            continue
+        html_paths.extend(sorted(child.glob("*.html")))
+    html_paths.sort(key=lambda p: (p.parent.name, p.name))
     if not html_paths:
-        print("[extract] No HTML files in state/facts.", file=sys.stderr)
+        print("[extract] No HTML files in state/facts/<date>/.", file=sys.stderr)
         return 0
-    transcripts_dir = facts_dir / "transcripts"
-    transcripts_dir.mkdir(parents=True, exist_ok=True)
     print(f"[extract] Processing {len(html_paths)} HTML file(s)...", file=sys.stderr)
     extracted = 0
     for i, html_path in enumerate(html_paths, 1):
+        date_dir = html_path.parent
+        transcripts_dir = date_dir / "transcripts"
+        transcripts_dir.mkdir(parents=True, exist_ok=True)
         slug = html_path.stem
         out_path = transcripts_dir / f"{slug}.txt"
         if process_file(html_path, out_path):
@@ -122,30 +132,37 @@ def main() -> int:
         return 1
 
     if args.inputs:
-        html_paths: list[Path] = []
+        html_paths = []
         for raw in args.inputs:
             p = Path(raw)
             if p.suffix.lower() == ".html" and p.exists():
                 html_paths.append(p)
             else:
-                candidate = facts_dir / f"{raw.rstrip('/').split('/')[-1].removesuffix('.html')}.html"
-                if candidate.exists():
-                    html_paths.append(candidate)
+                slug = raw.rstrip("/").split("/")[-1].removesuffix(".html")
+                found = list(facts_dir.glob(f"*/{slug}.html"))
+                if found:
+                    html_paths.extend(found)
                 else:
                     print(f"Not found: {raw}", file=sys.stderr)
+        html_paths = sorted(set(html_paths), key=lambda x: (x.parent.name, x.name))
         if not html_paths:
             return 1
     else:
-        html_paths = sorted(facts_dir.glob("*.html"))
+        html_paths = []
+        for child in sorted(facts_dir.iterdir()):
+            if child.is_dir() and _DATE_DIR_PATTERN.match(child.name):
+                html_paths.extend(sorted(child.glob("*.html")))
+        html_paths.sort(key=lambda x: (x.parent.name, x.name))
 
     if not html_paths:
         print("[extract] No HTML files to process.", file=sys.stderr)
         return 0
 
-    transcripts_dir = facts_dir / "transcripts"
-    transcripts_dir.mkdir(parents=True, exist_ok=True)
     extracted = 0
     for i, html_path in enumerate(html_paths, 1):
+        date_dir = html_path.parent
+        transcripts_dir = date_dir / "transcripts"
+        transcripts_dir.mkdir(parents=True, exist_ok=True)
         slug = html_path.stem
         out_path = transcripts_dir / f"{slug}.txt"
         if process_file(html_path, out_path):

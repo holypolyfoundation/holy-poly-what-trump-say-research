@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 
@@ -27,23 +28,42 @@ def getenv_required(name: str) -> str:
     return v
 
 
-def load_config() -> dict:
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Run pipeline; optionally generate report without sending.")
+    p.add_argument(
+        "--dry-run",
+        "--no-send",
+        dest="dry_run",
+        action="store_true",
+        help="Build and print report message(s) to stderr; do not send to Telegram or update last_report_message.",
+    )
+    return p.parse_args()
+
+
+def load_config(dry_run_flag: bool = False) -> dict:
     state_dir = os.getenv("STATE_DIR", os.path.join(os.path.dirname(__file__), "state"))
     limit = int(os.getenv("LIMIT", "500"))
     if limit <= 0:
         raise RuntimeError("LIMIT must be > 0")
+    dry_run = dry_run_flag or _parse_bool_env("DRY_RUN")
+    token = os.getenv("TELEGRAM_BOT_TOKEN") or ""
+    chat_id = os.getenv("TELEGRAM_CHAT_ID") or ""
+    if not dry_run:
+        token = getenv_required("TELEGRAM_BOT_TOKEN")
+        chat_id = getenv_required("TELEGRAM_CHAT_ID")
     return {
         "state_dir": state_dir,
         "limit": limit,
-        "token": getenv_required("TELEGRAM_BOT_TOKEN"),
-        "chat_id": getenv_required("TELEGRAM_CHAT_ID"),
-        "dry_run": _parse_bool_env("DRY_RUN"),
+        "token": token,
+        "chat_id": chat_id,
+        "dry_run": dry_run,
         "debug": _parse_bool_env("DEBUG"),
     }
 
 
 def main() -> int:
-    cfg = load_config()
+    args = _parse_args()
+    cfg = load_config(dry_run_flag=args.dry_run)
     os.makedirs(cfg["state_dir"], exist_ok=True)
 
     print("[main] Step 1/5: Fetch Polymarket events and state...", file=sys.stderr)

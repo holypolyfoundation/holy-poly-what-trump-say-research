@@ -71,7 +71,10 @@ def run(state_dir: str) -> None:
             d = (meta.get("date") or "").strip()[:10]
             if len(d) < 10 or d < start or d > end:
                 continue
-            txt_path = os.path.join(facts_dir, "transcripts", f"{fb_slug}.txt")
+            date_subdir = (meta.get("date") or "").strip()[:10]
+            if len(date_subdir) != 10 or date_subdir[4] != "-" or date_subdir[7] != "-":
+                continue
+            txt_path = os.path.join(facts_dir, date_subdir, "transcripts", f"{fb_slug}.txt")
             try:
                 with open(txt_path, "r", encoding="utf-8") as f:
                     transcript_pairs.append((fb_slug, f.read()))

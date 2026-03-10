@@ -11,9 +11,24 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 GAMMA_BASE = "https://gamma-api.polymarket.com"
+EVENTS_SLUG_PATH = "/events/slug/"
+
+# Resolution rule: "between March 9, 2026, 12:00 AM ET and March 15, 2026, 11:59 PM ET"
+_RESOLUTION_BETWEEN_RE = re.compile(
+    r"\bbetween\s+"
+    r"(\w+)\s+(\d{1,2}),\s*(\d{4})"  # first: Month DD, YYYY
+    r"(?:,.*?)?\s+"  # optional ", 12:00 AM ET " etc (non-greedy until space before "and")
+    r"and\s+"
+    r"(\w+)\s+(\d{1,2}),\s*(\d{4})",  # second date
+    re.IGNORECASE,
+)
+_MONTH_NAMES = {
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+}
 EVENT_BASE = "https://polymarket.com/event/"
 TRUMP_SAY_TITLE = "What will Trump say"
 TRUMP_TAG_ID = "126"
@@ -98,6 +113,29 @@ def _iso_to_date(iso: Any) -> str | None:
     return None
 
 
+def _parse_resolution_window_from_description(description: str) -> Tuple[str | None, str | None]:
+    """Parse resolution window from text like 'between March 9, 2026, 12:00 AM ET and March 15, 2026, 11:59 PM ET'. Returns (start_yyyy_mm_dd, end_yyyy_mm_dd) or (None, None)."""
+    if not description or not isinstance(description, str):
+        return None, None
+    m = _RESOLUTION_BETWEEN_RE.search(description)
+    if not m:
+        return None, None
+    try:
+        m1, d1, y1 = m.group(1).lower(), int(m.group(2)), int(m.group(3))
+        m2, d2, y2 = m.group(4).lower(), int(m.group(5)), int(m.group(6))
+        mon1 = _MONTH_NAMES.get(m1)
+        mon2 = _MONTH_NAMES.get(m2)
+        if mon1 is None or mon2 is None:
+            return None, None
+        start = f"{y1:04d}-{mon1:02d}-{d1:02d}"
+        end = f"{y2:04d}-{mon2:02d}-{d2:02d}"
+        if start > end:
+            start, end = end, start
+        return start, end
+    except (ValueError, IndexError):
+        return None, None
+
+
 def _market_has_dispute(m: Dict[str, Any]) -> bool:
     raw = m.get("umaResolutionStatuses")
     if isinstance(raw, list):
@@ -114,6 +152,15 @@ def _event_has_any_dispute(ev: Dict[str, Any]) -> bool:
 
 def _is_visit_based_event(slug: str) -> bool:
     return "during" in slug.lower() and "visit" in slug.lower()
+
+
+def _fetch_event_by_slug(slug: str, timeout: int = 30) -> Dict[str, Any] | None:
+    """Fetch full event by slug (includes description). Returns None on failure."""
+    url = f"{GAMMA_BASE}{EVENTS_SLUG_PATH}{urllib.parse.quote(slug, safe='')}"
+    try:
+        return _http_get_json(url, timeout=timeout)
+    except Exception:
+        return None
 
 
 def _fetch_all_trump_say_events(state_dir: str, limit: int) -> List[Dict[str, Any]]:
@@ -148,11 +195,17 @@ def _fetch_all_trump_say_events(state_dir: str, limit: int) -> List[Dict[str, An
             if _event_has_any_dispute(ev):
                 continue
             keywords = _extract_keywords_from_event(ev)
+            description = (ev.get("description") or "").strip()
+            if not description:
+                full = _fetch_event_by_slug(slug.strip())
+                if isinstance(full, dict) and full.get("description"):
+                    description = (full.get("description") or "").strip()
             out.append({
                 "slug": slug.strip(),
                 "event_url": EVENT_BASE + slug.strip(),
                 "event_title": title.strip(),
                 "keywords": keywords,
+                "description": description or None,
                 "startDate": ev.get("startDate"),
                 "endDate": ev.get("endDate"),
             })
@@ -186,6 +239,9 @@ def _merge_event_state(existing: Dict[str, Any] | None, event: Dict[str, Any]) -
         keywords.append(kw)
     start_date = _iso_to_date(event.get("startDate"))
     end_date = _iso_to_date(event.get("endDate"))
+    parsed_start, parsed_end = _parse_resolution_window_from_description(event.get("description") or "")
+    if parsed_start and parsed_end:
+        start_date, end_date = parsed_start, parsed_end
     time_window: Dict[str, Any] = {}
     if start_date:
         time_window["start_date"] = start_date

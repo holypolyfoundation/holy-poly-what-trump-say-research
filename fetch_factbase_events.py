@@ -4,7 +4,7 @@
 Reads time_window.start_date and time_window.end_date from state/*.json,
 calls Roll Call Factbase search API with media=Video and person=trump,
 filters results by date (in any window) and has transcript, then GETs each
-factbase_url and saves state/facts/<slug>.html.
+factbase_url and saves state/facts/<date>/<slug>.html (index at state/facts/index.json).
 
 Env vars:
   STATE_DIR   default ./state (relative to script dir)
@@ -206,18 +206,28 @@ def _run_fetch_impl(state_dir: Path) -> int:
 
     unique_slugs = len(set(s[0] for s in to_fetch))
     print(f"[factbase] Fetching up to {unique_slugs} transcript HTML(s)...", file=sys.stderr)
-    seen: set[str] = set()
+    index_path = facts_dir / "index.json"
     index: dict[str, dict[str, str]] = {}
+    if index_path.is_file():
+        try:
+            index = json.loads(index_path.read_text(encoding=ENCODING))
+            if not isinstance(index, dict):
+                index = {}
+        except (json.JSONDecodeError, OSError):
+            index = {}
+    seen: set[str] = set()
     for slug, factbase_url, date_norm in to_fetch:
         if slug in seen:
             continue
         seen.add(slug)
-        out_path = facts_dir / f"{slug}.html"
+        date_dir = facts_dir / date_norm
+        out_path = date_dir / f"{slug}.html"
         if out_path.is_file():
             index[slug] = {"date": date_norm}
             print(f"[factbase] Skip (already have): {slug}", file=sys.stderr)
             continue
         try:
+            date_dir.mkdir(parents=True, exist_ok=True)
             raw = http_get_bytes(factbase_url)
             out_path.write_bytes(raw)
             index[slug] = {"date": date_norm}
@@ -225,7 +235,6 @@ def _run_fetch_impl(state_dir: Path) -> int:
         except Exception as e:
             print(f"[factbase] Failed {slug}: {e}", file=sys.stderr)
 
-    index_path = facts_dir / "index.json"
     try:
         index_path.write_text(json.dumps(index, indent=2), encoding=ENCODING)
         print(f"[factbase] Wrote {index_path} ({len(index)} entries).", file=sys.stderr)
