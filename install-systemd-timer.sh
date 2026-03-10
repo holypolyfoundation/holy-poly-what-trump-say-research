@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Install systemd timer to run poly_trump_say_report.py every hour.
+# Install systemd timer to run main.py every hour.
 # Usage: ./install-systemd-timer.sh [PROJECT_DIR]
 #   PROJECT_DIR defaults to the directory containing this script.
 # Requires: sudo (to install under /etc/systemd/system and enable timer).
@@ -10,8 +10,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 PROJECT_DIR="${1:-$SCRIPT_DIR}"
 PROJECT_DIR="$(cd "$PROJECT_DIR" && pwd)"
 
-if [[ ! -f "$PROJECT_DIR/poly_trump_say_report.py" ]]; then
-  echo "Error: poly_trump_say_report.py not found in $PROJECT_DIR" >&2
+if [[ ! -f "$PROJECT_DIR/main.py" ]]; then
+  echo "Error: main.py not found in $PROJECT_DIR" >&2
   exit 1
 fi
 if [[ ! -f "$PROJECT_DIR/.env" ]]; then
