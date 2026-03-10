@@ -40,19 +40,47 @@ def _html_escape(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def build_report_message(state_dir: str, slug: str) -> str:
+def _html_unescape(s: str) -> str:
+    return s.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">")
+
+
+def _parse_previous_counters(last_message: str) -> Dict[str, int]:
+    """Extract keyword -> counter from a previous report message (lines like '- Key: N' or '- 🟢 Key: N')."""
+    prev: Dict[str, int] = {}
+    for line in (last_message or "").strip().split("\n"):
+        line = line.strip()
+        if not line.startswith("- "):
+            continue
+        rest = line[2:].strip().replace("🟢", "").strip()
+        if ": " not in rest:
+            continue
+        key, val_str = rest.rsplit(": ", 1)
+        key = _html_unescape(key.strip())
+        try:
+            prev[key] = int(val_str.strip())
+        except ValueError:
+            prev[key] = 0
+    return prev
+
+
+def build_report_message(state_dir: str, slug: str, last_message: str | None = None) -> str:
     path = event_state_path(state_dir, slug)
     data = load_event_state(path)
     if not data:
         return ""
+    prev = _parse_previous_counters(last_message or "")
     title = data.get("event_title") or slug
     event_url = data.get("event_url") or ""
     lines = [f'<a href="{event_url}">{_html_escape(title)}</a>'] if event_url else [_html_escape(title)]
     for kw in data.get("keywords") or []:
-        if isinstance(kw, dict):
-            gt = kw.get("groupItemTitle", "")
-            cnt = kw.get("counter", 0)
-            lines.append(f"- {_html_escape(str(gt))}: {cnt}")
+        if not isinstance(kw, dict):
+            continue
+        gt = kw.get("groupItemTitle", "")
+        cnt = kw.get("counter", 0)
+        prev_cnt = prev.get(gt) if gt in prev else None
+        added_or_changed = prev_cnt is None or prev_cnt != cnt
+        prefix = "🟢 " if added_or_changed else ""
+        lines.append(f"- {prefix}{_html_escape(str(gt))}: {cnt}")
     return "\n".join(lines)
 
 
@@ -95,14 +123,20 @@ def run(state_dir: str, token: str, chat_id: str, dry_run: bool = False, active_
         data = load_event_state(path)
         if not data:
             continue
-        new_message = build_report_message(state_dir, slug)
+        last_message = (data.get("last_report_message") or "").strip()
+        new_message = build_report_message(state_dir, slug, last_message=last_message)
         if not new_message.strip():
             continue
-        last_message = (data.get("last_report_message") or "").strip()
-        if new_message.strip() != last_message:
+        new_message_plain = "\n".join(
+            line.replace("🟢 ", "") for line in new_message.split("\n")
+        ).strip()
+        last_message_plain = "\n".join(
+            line.replace("🟢 ", "") for line in last_message.split("\n")
+        ).strip()
+        if new_message_plain != last_message_plain:
             send_telegram_message(token, chat_id, new_message, dry_run=dry_run)
             if not dry_run:
-                data["last_report_message"] = new_message
+                data["last_report_message"] = new_message_plain
                 save_event_state(path, data)
             print(f"[send_alert] Sent report for {slug}", file=sys.stderr)
             sent += 1
