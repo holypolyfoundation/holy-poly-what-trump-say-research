@@ -133,6 +133,22 @@ def _extract_keywords_from_event(event: Dict[str, Any]) -> List[str]:
     return out
 
 
+def _iso_to_date(iso: Any) -> str | None:
+    """Extract YYYY-MM-DD from an ISO 8601 string, or return None."""
+    if not iso or not isinstance(iso, str):
+        return None
+    s = iso.strip()
+    if len(s) >= 10 and s[4] == "-" and s[7] == "-":
+        return s[:10]
+    return None
+
+
+def _is_visit_based_event(slug: str) -> bool:
+    """True if event is tied to a specific visit (e.g. Kentucky, TrumpRX Ohio), not a time window."""
+    s = slug.lower()
+    return "during" in s and "visit" in s
+
+
 def fetch_all_trump_say_events(cfg: Config) -> List[Dict[str, Any]]:
     needle = TRUMP_SAY_TITLE.lower()
     out: List[Dict[str, Any]] = []
@@ -162,6 +178,8 @@ def fetch_all_trump_say_events(cfg: Config) -> List[Dict[str, Any]]:
             slug = ev.get("slug")
             if not isinstance(slug, str) or not slug.strip():
                 continue
+            if _is_visit_based_event(slug):
+                continue
             event_url = EVENT_BASE + slug.strip()
             event_title = title.strip()
             keywords = _extract_keywords_from_event(ev)
@@ -170,6 +188,8 @@ def fetch_all_trump_say_events(cfg: Config) -> List[Dict[str, Any]]:
                 "event_url": event_url,
                 "event_title": event_title,
                 "keywords": keywords,
+                "startDate": ev.get("startDate"),
+                "endDate": ev.get("endDate"),
             })
 
         if len(page) < cfg.limit:
@@ -241,12 +261,23 @@ def merge_event_state(existing: Dict[str, Any] | None, event: Dict[str, Any]) ->
             kw["min_times"] = None
         keywords.append(kw)
 
-    return {
+    start_date = _iso_to_date(event.get("startDate"))
+    end_date = _iso_to_date(event.get("endDate"))
+    time_window: Dict[str, Any] = {}
+    if start_date is not None:
+        time_window["start_date"] = start_date
+    if end_date is not None:
+        time_window["end_date"] = end_date
+
+    out: Dict[str, Any] = {
         "event_url": event["event_url"],
         "event_title": event["event_title"],
         "keywords": keywords,
         "last_updated": "",  # set by save_event_state
     }
+    if time_window:
+        out["time_window"] = time_window
+    return out
 
 
 def cleanup_stale_state_files(cfg: Config, active_slugs: set[str]) -> None:
