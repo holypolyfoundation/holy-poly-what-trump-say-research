@@ -69,11 +69,28 @@ def _parse_previous_counters(last_message: str) -> Dict[str, int]:
     return prev
 
 
+def _has_counter_change_or_new_event(data: Dict[str, Any], last_message: str) -> bool:
+    """True if any market counter changed or this is a new event (no previous report)."""
+    prev = _parse_previous_counters(last_message)
+    keywords = data.get("keywords") or []
+    if not prev and keywords:
+        return True
+    for kw in keywords:
+        if not isinstance(kw, dict):
+            continue
+        gt = kw.get("groupItemTitle", "")
+        cnt = kw.get("counter", 0)
+        if prev.get(gt) != cnt:
+            return True
+    return False
+
+
 def build_report_message(
     state_dir: str,
     slug: str,
     last_message: str | None = None,
     max_refs: int | None = None,
+    include_only_changed: bool = False,
 ) -> str:
     path = event_state_path(state_dir, slug)
     data = load_event_state(path)
@@ -91,6 +108,8 @@ def build_report_message(
         refs: list = kw.get("transcript_refs") or []
         prev_cnt = prev.get(gt) if gt in prev else None
         added_or_changed = prev_cnt is None or prev_cnt != cnt
+        if include_only_changed and not added_or_changed:
+            continue
         prefix = "🟢 " if added_or_changed else ""
         line = f"- {prefix}{_html_escape(str(gt))}: {cnt}"
         if refs and (max_refs is None or max_refs > 0):
@@ -107,15 +126,25 @@ def build_report_message(
     return "\n".join(lines)
 
 
-def _truncate_message_to_telegram_limit(state_dir: str, slug: str, message: str, last_message: str | None) -> str:
+def _truncate_message_to_telegram_limit(
+    state_dir: str,
+    slug: str,
+    message: str,
+    last_message: str | None,
+    include_only_changed: bool = False,
+) -> str:
     """If message exceeds Telegram limit, rebuild with fewer transcript links per keyword."""
     if len(message) <= TELEGRAM_MAX_MESSAGE_LENGTH:
         return message
     for max_refs in (15, 10, 5, 3, 1, 0):
-        truncated = build_report_message(state_dir, slug, last_message=last_message, max_refs=max_refs)
+        truncated = build_report_message(
+            state_dir, slug, last_message=last_message, max_refs=max_refs, include_only_changed=include_only_changed
+        )
         if len(truncated) <= TELEGRAM_MAX_MESSAGE_LENGTH:
             return truncated
-    return build_report_message(state_dir, slug, last_message=last_message, max_refs=0)
+    return build_report_message(
+        state_dir, slug, last_message=last_message, max_refs=0, include_only_changed=include_only_changed
+    )
 
 
 def send_telegram_message(token: str, chat_id: str, text: str, dry_run: bool = False) -> None:
@@ -158,24 +187,22 @@ def run(state_dir: str, token: str, chat_id: str, dry_run: bool = False, active_
         if not data:
             continue
         last_message = (data.get("last_report_message") or "").strip()
-        new_message = build_report_message(state_dir, slug, last_message=last_message)
-        new_message = _truncate_message_to_telegram_limit(state_dir, slug, new_message, last_message)
-        if not new_message.strip():
+        if not _has_counter_change_or_new_event(data, last_message):
+            continue
+        full_message = build_report_message(state_dir, slug, last_message=last_message)
+        full_message = _truncate_message_to_telegram_limit(state_dir, slug, full_message, last_message)
+        if not full_message.strip():
             continue
         new_message_plain = "\n".join(
-            line.replace("🟢 ", "") for line in new_message.split("\n")
+            line.replace("🟢 ", "") for line in full_message.split("\n")
         ).strip()
-        last_message_plain = "\n".join(
-            line.replace("🟢 ", "") for line in last_message.split("\n")
-        ).strip()
-        if new_message_plain != last_message_plain:
-            send_telegram_message(token, chat_id, new_message, dry_run=dry_run)
-            if not dry_run:
-                data["last_report_message"] = new_message_plain
-                save_event_state(path, data)
-            print(f"[send_alert] Sent report for {slug}", file=sys.stderr)
-            sent += 1
-            time.sleep(0.4)
+        send_telegram_message(token, chat_id, full_message, dry_run=dry_run)
+        if not dry_run:
+            data["last_report_message"] = new_message_plain
+            save_event_state(path, data)
+        print(f"[send_alert] Sent report for {slug}", file=sys.stderr)
+        sent += 1
+        time.sleep(0.4)
     if sent:
         print(f"[send_alert] Done: {sent} report(s) sent.", file=sys.stderr)
     else:

@@ -163,20 +163,26 @@ def _fetch_all_trump_say_events(state_dir: str, limit: int) -> List[Dict[str, An
 
 
 def _merge_event_state(existing: Dict[str, Any] | None, event: Dict[str, Any]) -> Dict[str, Any]:
-    old_map = {}
+    old_map: Dict[str, int] = {}
+    old_kw_by_title: Dict[str, Dict[str, Any]] = {}
     if existing and isinstance(existing.get("keywords"), list):
         for kw in existing["keywords"]:
             if isinstance(kw, dict) and isinstance(kw.get("groupItemTitle"), str):
-                old_map[kw["groupItemTitle"]] = int(kw.get("counter") or 0)
+                title = kw["groupItemTitle"]
+                old_map[title] = int(kw.get("counter") or 0)
+                old_kw_by_title[title] = kw
     keywords: List[Dict[str, Any]] = []
     for title in event["keywords"]:
         phrases, min_times = parse_group_item_title(title)
+        old_kw = old_kw_by_title.get(title) or {}
         kw: Dict[str, Any] = {
             "groupItemTitle": title,
             "phrases": phrases,
             "counter": old_map.get(title, 0),
             "min_times": min_times,
         }
+        if isinstance(old_kw.get("transcript_refs"), list):
+            kw["transcript_refs"] = old_kw["transcript_refs"]
         keywords.append(kw)
     start_date = _iso_to_date(event.get("startDate"))
     end_date = _iso_to_date(event.get("endDate"))
@@ -193,6 +199,8 @@ def _merge_event_state(existing: Dict[str, Any] | None, event: Dict[str, Any]) -
     }
     if time_window:
         out["time_window"] = time_window
+    if existing and isinstance(existing.get("last_report_message"), str):
+        out["last_report_message"] = existing["last_report_message"]
     return out
 
 
