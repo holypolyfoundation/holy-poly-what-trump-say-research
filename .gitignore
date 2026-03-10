@@ -1,3 +1,4 @@
 .env
+.venv
 state
 .DS_Store

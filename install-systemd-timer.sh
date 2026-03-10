@@ -35,6 +35,15 @@ for f in "$SERVICE_SRC" "$TIMER_SRC"; do
   fi
 done
 
+# Ensure virtualenv and dependencies (avoids system pip externally-managed-environment)
+VENV="$PROJECT_DIR/.venv"
+if [ ! -x "$VENV/bin/python" ]; then
+  echo "Creating venv at $VENV..."
+  python3 -m venv "$VENV"
+fi
+echo "Installing dependencies into venv..."
+"$VENV/bin/pip" install -q -r "$PROJECT_DIR/requirements.txt"
+
 # First step: stop and remove any existing installation
 sudo systemctl stop holy-poly-what-trump-say-research.timer 2>/dev/null || true
 sudo systemctl disable holy-poly-what-trump-say-research.timer 2>/dev/null || true

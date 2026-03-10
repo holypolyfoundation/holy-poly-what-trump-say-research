@@ -56,6 +56,7 @@ cd /path/to/poly-what-trump-say-research
 set -a && source .env && set +a
 python3 main.py
 ```
+If your system has an externally-managed Python (e.g. Debian/Ubuntu), use the project venv: after running `./install-systemd-timer.sh` once, use `.venv/bin/python main.py` instead of `python3 main.py`, or `source .venv/bin/activate` then `python main.py`.
 
 Dry run (no Telegram send, no state update for last report):
 ```bash
@@ -70,8 +71,7 @@ The script `install-systemd-timer.sh` installs a systemd **timer** that runs the
 - `systemd` (Linux)
 - `sudo` (script copies units to `/etc/systemd/system/`)
 - `main.py` and `.env` in the project directory
-- **Python dependencies** installed for the same `python3` that systemd will use (e.g. root when run as root):  
-  `pip3 install -r requirements.txt`
+- **python3-venv** (or `python3-full`) so the install script can create a virtualenv. On Debian/Ubuntu: `apt install python3-venv` if needed. The script creates `.venv` and runs `pip install -r requirements.txt` inside it; the service uses `.venv/bin/python` (avoids system pip “externally-managed-environment”).
 
 ### Install
 From the project root:
@@ -85,9 +85,10 @@ Or with an explicit project path:
 The script will:
 1. Resolve the project directory (script dir or the path you pass).
 2. Check that `main.py` and `.env` exist.
-3. Substitute your user/group and project path into `systemd/holy-poly-what-trump-say-research.service`.
-4. Copy the service and timer to `/etc/systemd/system/`.
-5. Run `daemon-reload`, then `enable` and `start` the timer.
+3. Create `.venv` if missing and run `pip install -r requirements.txt` in it.
+4. Substitute your user/group and project path into `systemd/holy-poly-what-trump-say-research.service`.
+5. Copy the service and timer to `/etc/systemd/system/`.
+6. Run `daemon-reload`, then `enable` and `start` the timer.
 
 You will be prompted for your sudo password.
 
@@ -141,7 +142,7 @@ What will Trump say in March?
 ## Troubleshooting (timer runs but no `state/` or no reports)
 - **Check why the service failed:**  
   `sudo journalctl -u holy-poly-what-trump-say-research.service -n 80 --no-pager`  
-  Common causes: missing or empty `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` in `.env`; or **`ModuleNotFoundError: No module named 'bs4'`** — install deps for the user that runs the service: `pip3 install -r requirements.txt` (as root if the service runs as root).
+  Common causes: missing or empty `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` in `.env`; or **`ModuleNotFoundError: No module named 'bs4'`** — re-run `./install-systemd-timer.sh` so it creates/updates `.venv` and installs dependencies (service uses `.venv/bin/python`).
 - **"Failed to load environment files: No such file or directory"** — the installed unit still had a placeholder path; re-run `./install-systemd-timer.sh` from the project directory so `EnvironmentFile` gets the correct path to `.env`.
 - **Test run by hand** (same as the timer):  
   `cd /path/to/poly-what-trump-say-research && set -a && source .env && set +a && python3 main.py`  
