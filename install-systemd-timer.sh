@@ -61,6 +61,7 @@ sudo systemctl enable holy-poly-what-trump-say-research.timer
 sudo systemctl start holy-poly-what-trump-say-research.timer
 
 echo "Done. Timer is enabled and started."
+echo "  Ensure .env has TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID (use ls -la to see .env)."
 echo "  Status:  sudo systemctl status holy-poly-what-trump-say-research.timer"
 echo "  Logs:    sudo journalctl -u holy-poly-what-trump-say-research.service -f"
 echo "  Next:    systemctl list-timers holy-poly-what-trump-say-research.timer"

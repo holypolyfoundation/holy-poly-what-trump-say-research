@@ -44,6 +44,7 @@ def load_config() -> dict:
 
 def main() -> int:
     cfg = load_config()
+    os.makedirs(cfg["state_dir"], exist_ok=True)
 
     print("[main] Step 1/5: Fetch Polymarket events and state...", file=sys.stderr)
     active_slugs = run_fetch_events(cfg["state_dir"], limit=cfg["limit"])

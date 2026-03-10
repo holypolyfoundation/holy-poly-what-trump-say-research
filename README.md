@@ -37,7 +37,7 @@ python3 --version
 - `systemd/holy-poly-what-trump-say-research.service` — systemd oneshot (used by timer)
 - `systemd/holy-poly-what-trump-say-research.timer` — systemd timer (every 10 minutes)
 - `install-systemd-timer.sh` — installs timer and service
-- `.env` — environment config (secrets + params); copy from `.env.example`
+- `.env` — environment config (secrets + params); copy from `.env.example`. Hidden file: use `ls -la` to see it.
 
 ## Configuration (environment variables)
 Required:
@@ -70,6 +70,8 @@ The script `install-systemd-timer.sh` installs a systemd **timer** that runs the
 - `systemd` (Linux)
 - `sudo` (script copies units to `/etc/systemd/system/`)
 - `main.py` and `.env` in the project directory
+- **Python dependencies** installed for the same `python3` that systemd will use (e.g. root when run as root):  
+  `pip3 install -r requirements.txt`
 
 ### Install
 From the project root:
@@ -135,6 +137,16 @@ What will Trump say in March?
 - 🟢 Central Casting: 2 (1, 2)
 - Barack Hussein Obama: 1 (1)
 ```
+
+## Troubleshooting (timer runs but no `state/` or no reports)
+- **Check why the service failed:**  
+  `sudo journalctl -u holy-poly-what-trump-say-research.service -n 80 --no-pager`  
+  Common causes: missing or empty `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` in `.env`; or **`ModuleNotFoundError: No module named 'bs4'`** — install deps for the user that runs the service: `pip3 install -r requirements.txt` (as root if the service runs as root).
+- **"Failed to load environment files: No such file or directory"** — the installed unit still had a placeholder path; re-run `./install-systemd-timer.sh` from the project directory so `EnvironmentFile` gets the correct path to `.env`.
+- **Test run by hand** (same as the timer):  
+  `cd /path/to/poly-what-trump-say-research && set -a && source .env && set +a && python3 main.py`  
+  Fix any error before relying on the timer.
+- **Ensure `.env` is valid:** `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` must be non-empty. Use `ls -la` to see `.env`, then `cat .env` (redact when sharing).
 
 ## Notes / Edge cases
 - **Send condition:** A message is sent only when the event is new (no previous report) or at least one keyword’s **counter** changed; refs-only changes do not trigger a send.
